@@ -1,0 +1,189 @@
+/* Medical Records & AI Summarization Styles */
+.medical-records-page {
+  padding: 32px 0 60px;
+}
+
+.upload-zone {
+  border: 2px dashed var(--primary);
+  background: var(--primary-subtle);
+  border-radius: var(--radius-lg);
+  padding: 40px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-bottom: 28px;
+}
+
+.upload-zone:hover {
+  background: #e6fffa;
+  border-color: var(--primary-hover);
+}
+
+.upload-icon-circle {
+  width: 64px;
+  height: 64px;
+  background: #ffffff;
+  color: var(--primary);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.upload-progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  margin-top: 16px;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+  transition: width 0.3s ease;
+}
+
+/* Medical Record Card */
+.record-card {
+  background: #ffffff;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 20px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.2s ease;
+}
+
+.record-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: #cbd5e1;
+}
+
+.record-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.record-file-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: #fee2e2;
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.record-meta h4 {
+  font-size: 0.98rem;
+  margin-bottom: 2px;
+}
+
+.record-meta p {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+/* Structured AI Medical Summary Layout */
+.summary-container {
+  background: #ffffff;
+  border: 1.5px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+  margin-top: 24px;
+  box-shadow: var(--shadow-sm);
+}
+
+.summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 2px solid #f1f5f9;
+}
+
+.summary-disclaimer-banner {
+  background: #fffbeb;
+  border-left: 4px solid #f59e0b;
+  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 24px;
+  font-size: 0.88rem;
+  color: #92400e;
+  line-height: 1.5;
+}
+
+.summary-section-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+.summary-section-box {
+  background: #f8fafc;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 18px 20px;
+}
+
+.summary-section-box.highlight {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
+.summary-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.summary-section-title.alert {
+  color: #b91c1c;
+}
+
+.summary-section-content {
+  font-size: 0.92rem;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+/* Consent Box */
+.consent-panel {
+  background: linear-gradient(135deg, var(--primary-subtle), #ffffff);
+  border: 1.5px solid rgba(13, 148, 136, 0.3);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  margin-top: 28px;
+}
+
+.consent-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.consent-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
