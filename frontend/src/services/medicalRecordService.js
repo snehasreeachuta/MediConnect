@@ -22,11 +22,12 @@ export const medicalRecordService = {
     return res.data.records || [];
   },
 
-  async downloadRecord(id, filename = 'medical_document.pdf') {
+  async downloadRecord(id, filename = 'medical_document') {
     const res = await api.get(`/medical-records/${id}/download`, {
       responseType: 'blob'
     });
-    const blob = new Blob([res.data], { type: 'application/pdf' });
+    const contentType = res.headers['content-type'] || 'application/pdf';
+    const blob = new Blob([res.data], { type: contentType });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;

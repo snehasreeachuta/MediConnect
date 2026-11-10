@@ -3,9 +3,11 @@ const db = require('../config/db');
 class MedicalRecord {
   static async create({
     patientId,
+    doctorId = null,
     appointmentId = null,
     originalFilename,
     storedFilename,
+    filePath = null,
     mimeType = 'application/pdf',
     fileSize,
     extractedText = null,
@@ -13,10 +15,10 @@ class MedicalRecord {
   }) {
     const result = await db.query(
       `INSERT INTO medical_records (
-        patient_id, appointment_id, original_filename, stored_filename,
-        mime_type, file_size, extracted_text, processing_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [patientId, appointmentId, originalFilename, storedFilename, mimeType, fileSize, extractedText, processingStatus]
+        patient_id, doctor_id, appointment_id, original_filename, stored_filename,
+        file_path, mime_type, file_size, extracted_text, processing_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [patientId, doctorId, appointmentId, originalFilename, storedFilename, filePath, mimeType, fileSize, extractedText, processingStatus]
     );
     return result.insertId;
   }
@@ -24,6 +26,14 @@ class MedicalRecord {
   static async findById(id) {
     const rows = await db.query('SELECT * FROM medical_records WHERE id = ?', [id]);
     return rows[0] || null;
+  }
+
+  static async findByAppointmentId(appointmentId) {
+    return await db.query('SELECT * FROM medical_records WHERE appointment_id = ? ORDER BY uploaded_at DESC', [appointmentId]);
+  }
+
+  static async findByDoctorId(doctorId) {
+    return await db.query('SELECT * FROM medical_records WHERE doctor_id = ? ORDER BY uploaded_at DESC', [doctorId]);
   }
 
   static async findByPatientId(patientId, appointmentId = null) {
@@ -91,7 +101,7 @@ class MedicalRecord {
 
   static async revokeShareConsent(appointmentId) {
     await db.query(
-      "UPDATE medical_record_shares SET consent_status = 'revoked' WHERE appointment_id = ?",
+      "UPDATE medical_record_shares SET consent_status = ? WHERE appointment_id = ?",
       ['revoked', appointmentId]
     );
   }

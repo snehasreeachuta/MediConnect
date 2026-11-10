@@ -16,19 +16,31 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: (req, file, cb) => {
-    // Generate safe, non-guessable random hex filename with .pdf extension
+    // Generate safe, non-guessable random hex filename preserving extension
     const randomHex = crypto.randomBytes(16).toString('hex');
-    const safeName = `medrec_${Date.now()}_${randomHex}.pdf`;
+    const ext = path.extname(file.originalname).toLowerCase() || 
+      (file.mimetype === 'application/pdf' ? '.pdf' : 
+       file.mimetype === 'image/png' ? '.png' : 
+       file.mimetype === 'image/webp' ? '.webp' : '.jpg');
+    const safeName = `medrec_${Date.now()}_${randomHex}${ext}`;
     cb(null, safeName);
   }
 });
 
 const fileFilter = (req, file, cb) => {
-  // Validate MIME type
-  if (file.mimetype === 'application/pdf') {
+  // Validate MIME type: PDF and common medical image formats
+  const allowedMimeTypes = [
+    'application/pdf',
+    'image/jpeg',
+    'image/jpg',
+    'image/png',
+    'image/webp'
+  ];
+
+  if (allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new AppError('Invalid file format. Only PDF documents are supported for medical record upload.', 400), false);
+    cb(new AppError('Invalid file format. Supported formats are PDF, JPEG, PNG, and WEBP.', 400), false);
   }
 };
 

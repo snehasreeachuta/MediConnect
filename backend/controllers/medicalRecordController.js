@@ -11,13 +11,13 @@ const FileStorageService = require('../services/fileStorageService');
 const asyncHandler = require('../utils/asyncHandler');
 const AppError = require('../utils/AppError');
 
-// 1. Upload Medical Record (PDF)
+// 1. Upload Medical Record (PDF or Image)
 exports.uploadMedicalRecord = asyncHandler(async (req, res, next) => {
   if (!req.file) {
-    return next(new AppError('Please select a PDF medical record document to upload.', 400));
+    return next(new AppError('Please select a medical report file (PDF, JPEG, PNG, or WEBP) to upload.', 400));
   }
 
-  const { appointmentId } = req.body;
+  const { appointmentId, doctorId } = req.body;
   let patient = req.patient;
   if (!patient) {
     patient = await User.getPatientProfileByUserId(req.user.id);
@@ -29,19 +29,28 @@ exports.uploadMedicalRecord = asyncHandler(async (req, res, next) => {
   }
 
   let verifiedAppointmentId = null;
+  let targetDoctorId = doctorId ? Number(doctorId) : null;
+
   if (appointmentId) {
     const appt = await Appointment.findById(Number(appointmentId));
     if (appt && appt.patient_id === patient.id) {
       verifiedAppointmentId = appt.id;
+      if (!targetDoctorId) {
+        targetDoctorId = appt.doctor_id;
+      }
     }
   }
 
-  // Create record in database
+  const relativeFilePath = `uploads/${req.file.filename}`;
+
+  // Create record in database with doctorId, appointmentId, and relative filePath
   const recordId = await MedicalRecord.create({
     patientId: patient.id,
+    doctorId: targetDoctorId,
     appointmentId: verifiedAppointmentId,
     originalFilename: req.file.originalname,
     storedFilename: req.file.filename,
+    filePath: relativeFilePath,
     mimeType: req.file.mimetype,
     fileSize: req.file.size,
     processingStatus: 'uploaded'
@@ -54,21 +63,28 @@ exports.uploadMedicalRecord = asyncHandler(async (req, res, next) => {
     action: 'UPLOAD_MEDICAL_RECORD',
     resourceType: 'medical_records',
     resourceId: recordId,
-    details: { originalFilename: req.file.originalname, appointmentId: verifiedAppointmentId },
+    details: {
+      originalFilename: req.file.originalname,
+      appointmentId: verifiedAppointmentId,
+      doctorId: targetDoctorId,
+      mimeType: req.file.mimetype
+    },
     ipAddress: req.ip
   });
 
   // Automatically start background extraction and summarization
   try {
     const filePath = FileStorageService.getSafeFilePath(req.file.filename);
-    const extraction = await DocumentExtractionService.extractPdfText(filePath);
+    const extraction = await DocumentExtractionService.extractDocument(filePath, req.file.mimetype);
 
     await MedicalRecord.updateStatus(recordId, 'processing', extraction.text);
 
     // Generate Structured AI Summary
-    const summaryResult = await MedicalSummaryService.summarizeRecord(extraction.text, {
-      fullName: req.user.full_name
-    });
+    const summaryResult = await MedicalSummaryService.summarizeRecord(
+      extraction.text,
+      { fullName: req.user.full_name },
+      { filePath, mimeType: req.file.mimetype }
+    );
 
     const summaryId = await MedicalRecord.createSummary({
       patientId: patient.id,
@@ -81,17 +97,14 @@ exports.uploadMedicalRecord = asyncHandler(async (req, res, next) => {
 
     await MedicalRecord.updateStatus(recordId, 'summary_ready', extraction.text);
 
-    // If linked to an appointment, auto-grant initial consent or prepare share record
-    if (verifiedAppointmentId) {
-      const appt = await Appointment.findById(verifiedAppointmentId);
-      if (appt) {
-        await MedicalRecord.grantShareConsent({
-          patientId: patient.id,
-          doctorId: appt.doctor_id,
-          appointmentId: appt.id,
-          summaryId
-        });
-      }
+    // If linked to an appointment or doctor, grant consent so the doctor can view
+    if (verifiedAppointmentId && targetDoctorId) {
+      await MedicalRecord.grantShareConsent({
+        patientId: patient.id,
+        doctorId: targetDoctorId,
+        appointmentId: verifiedAppointmentId,
+        summaryId
+      });
     }
   } catch (procErr) {
     console.error('[MedicalRecord Upload Processing Warning]', procErr.message);
@@ -146,8 +159,12 @@ exports.downloadRecordFile = asyncHandler(async (req, res, next) => {
     }
   } else if (req.user.role === 'doctor') {
     const doctor = req.doctor || await Doctor.findByUserId(req.user.id);
-    if (doctor && record.appointment_id) {
-      hasAccess = await MedicalRecord.checkDoctorAccess(doctor.id, record.appointment_id);
+    if (doctor) {
+      if (record.doctor_id && record.doctor_id === doctor.id) {
+        hasAccess = true;
+      } else if (record.appointment_id) {
+        hasAccess = await MedicalRecord.checkDoctorAccess(doctor.id, record.appointment_id);
+      }
     }
   } else if (req.user.role === 'admin') {
     hasAccess = true;

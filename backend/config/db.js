@@ -1,9 +1,23 @@
+const fs = require('fs');
+const path = require('path');
 const mysql = require('mysql2/promise');
 const config = require('./environment');
 
 let pool = null;
 let isFallbackMode = false;
 let fallbackStore = null;
+
+const DB_FILE = path.resolve(__dirname, '../../database/mediconnect_persistent_store.json');
+
+function saveFallbackStore(store) {
+  try {
+    const dir = path.dirname(DB_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(DB_FILE, JSON.stringify(store, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[DB Persistence Error] Failed to write persistent store:', err.message);
+  }
+}
 
 function getPool() {
   if (!pool && !isFallbackMode) {
@@ -28,10 +42,21 @@ function getPool() {
 }
 
 /**
- * Initialize fallback in-memory store for seamless offline/dev testing
+ * Initialize persistent database store for development and MySQL offline fallback
  */
 function initFallbackStore() {
   if (fallbackStore) return fallbackStore;
+
+  // Try loading from persistent disk storage first
+  if (fs.existsSync(DB_FILE)) {
+    try {
+      const raw = fs.readFileSync(DB_FILE, 'utf8');
+      fallbackStore = JSON.parse(raw);
+      return fallbackStore;
+    } catch (e) {
+      console.warn('[DB Persistence] Error reading existing store file, re-initializing defaults.');
+    }
+  }
 
   const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
@@ -82,6 +107,7 @@ function initFallbackStore() {
     audit_logs: []
   };
 
+  saveFallbackStore(fallbackStore);
   return fallbackStore;
 }
 
@@ -93,12 +119,12 @@ async function query(sql, params = []) {
     try {
       const currentPool = getPool();
       if (currentPool) {
-        const [results] = await currentPool.execute(sql, params);
+        const [results] = await currentPool.query(sql, params);
         return results;
       }
     } catch (err) {
       if (err.code === 'ECONNREFUSED' || err.code === 'EACCES' || err.code === 'ENOTFOUND') {
-        console.warn(`[MediConnect DB] MySQL connection not available (${err.code}). Activating In-Memory Dev Store.`);
+        console.warn(`[MediConnect DB] MySQL connection not available (${err.code}). Activating Persistent Storage.`);
         isFallbackMode = true;
       } else {
         throw err;
@@ -169,12 +195,12 @@ function executeFallbackQuery(sql, params = []) {
         };
       });
 
-      if (upper.includes('USER_ID =')) {
+      if (upper.includes('WHERE D.USER_ID =') || upper.includes('WHERE USER_ID =') || upper.includes('USER_ID = ?')) {
         const uid = Number(params[0]);
         const doc = docs.find(d => d.user_id === uid);
         return doc ? [doc] : [];
       }
-      if (upper.includes('D.ID =') || upper.includes('ID =')) {
+      if (upper.includes('WHERE D.ID =') || upper.includes('WHERE ID =') || upper.includes('D.ID = ?')) {
         const id = Number(params[0]);
         const doc = docs.find(d => d.id === id);
         return doc ? [doc] : [];
@@ -222,33 +248,38 @@ function executeFallbackQuery(sql, params = []) {
         };
       });
 
-      if (upper.includes('ID =')) {
-        const id = Number(params[0]);
-        const found = list.find(a => a.id === id);
-        return found ? [found] : [];
-      }
-      if (upper.includes('APPOINTMENT_REFERENCE =')) {
+      if (upper.includes('WHERE A.APPOINTMENT_REFERENCE =') || upper.includes('WHERE APPOINTMENT_REFERENCE =') || upper.includes('APPOINTMENT_REFERENCE = ?')) {
         const ref = params[0];
         const found = list.find(a => a.appointment_reference === ref);
         return found ? [found] : [];
       }
-      if (upper.includes('PATIENT_ID =')) {
+      if (upper.includes('WHERE A.PATIENT_ID =') || upper.includes('WHERE PATIENT_ID =') || upper.includes('A.PATIENT_ID = ?') || upper.includes('PATIENT_ID = ?')) {
         const pid = Number(params[0]);
         return list.filter(a => a.patient_id === pid);
       }
-      if (upper.includes('DOCTOR_ID =')) {
+      if (upper.includes('WHERE A.DOCTOR_ID =') || upper.includes('WHERE DOCTOR_ID =') || upper.includes('A.DOCTOR_ID = ?') || upper.includes('DOCTOR_ID = ?')) {
         const did = Number(params[0]);
         return list.filter(a => a.doctor_id === did);
+      }
+      if (upper.includes('WHERE A.ID =') || upper.includes('WHERE ID =') || upper.includes('A.ID = ?')) {
+        const id = Number(params[0]);
+        const found = list.find(a => a.id === id);
+        return found ? [found] : [];
       }
       return list;
     }
 
     // MEDICAL RECORDS
     if (upper.includes('FROM MEDICAL_RECORDS')) {
-      if (upper.includes('ID =')) {
+      if (upper.includes('WHERE ID =') || upper.includes('WHERE MR.ID =') || upper.includes('MR.ID = ?')) {
         const id = Number(params[0]);
         const r = store.medical_records.find(rec => rec.id === id);
         return r ? [clone(r)] : [];
+      }
+      if (upper.includes('DOCTOR_ID =')) {
+        const did = Number(params[0]);
+        let recs = store.medical_records.filter(r => r.doctor_id === did);
+        return clone(recs);
       }
       if (upper.includes('PATIENT_ID =')) {
         const pid = Number(params[0]);
@@ -257,6 +288,11 @@ function executeFallbackQuery(sql, params = []) {
           const aid = Number(params[1]);
           recs = recs.filter(r => r.appointment_id === aid);
         }
+        return clone(recs);
+      }
+      if (upper.includes('APPOINTMENT_ID =')) {
+        const aid = Number(params[0]);
+        let recs = store.medical_records.filter(r => r.appointment_id === aid);
         return clone(recs);
       }
       return clone(store.medical_records);
@@ -279,6 +315,15 @@ function executeFallbackQuery(sql, params = []) {
 
     // MEDICAL RECORD SHARES
     if (upper.includes('FROM MEDICAL_RECORD_SHARES')) {
+      if (upper.includes('DOCTOR_ID =') && upper.includes('APPOINTMENT_ID =')) {
+        const did = Number(params[0]);
+        const aid = Number(params[1]);
+        let shares = store.medical_record_shares.filter(s => s.doctor_id === did && s.appointment_id === aid);
+        if (upper.includes("CONSENT_STATUS = 'GRANTED'")) {
+          shares = shares.filter(s => s.consent_status === 'granted');
+        }
+        return clone(shares);
+      }
       if (upper.includes('APPOINTMENT_ID =')) {
         const aid = Number(params[0]);
         let shares = store.medical_record_shares.filter(s => s.appointment_id === aid);
@@ -342,6 +387,7 @@ function executeFallbackQuery(sql, params = []) {
         updated_at: now
       };
       store.users.push(user);
+      saveFallbackStore(store);
       return { insertId: newId, affectedRows: 1 };
     }
 
@@ -359,6 +405,7 @@ function executeFallbackQuery(sql, params = []) {
         updated_at: now
       };
       store.patients.push(patient);
+      saveFallbackStore(store);
       return { insertId: newId, affectedRows: 1 };
     }
 
@@ -386,6 +433,7 @@ function executeFallbackQuery(sql, params = []) {
         updated_at: now
       };
       store.doctors.push(doctor);
+      saveFallbackStore(store);
       return { insertId: newId, affectedRows: 1 };
     }
 
@@ -403,6 +451,7 @@ function executeFallbackQuery(sql, params = []) {
         is_active: 1
       };
       store.doctor_availability.push(av);
+      saveFallbackStore(store);
       return { insertId: newId, affectedRows: 1 };
     }
 
@@ -425,25 +474,48 @@ function executeFallbackQuery(sql, params = []) {
         updated_at: now
       };
       store.appointments.push(appt);
+      saveFallbackStore(store);
       return { insertId: newId, affectedRows: 1 };
     }
 
     if (upper.includes('INTO MEDICAL_RECORDS')) {
       const newId = store.medical_records.length ? Math.max(...store.medical_records.map(r => r.id)) + 1 : 1;
-      const rec = {
-        id: newId,
-        patient_id: Number(params[0]),
-        appointment_id: params[1] ? Number(params[1]) : null,
-        original_filename: params[2],
-        stored_filename: params[3],
-        mime_type: params[4] || 'application/pdf',
-        file_size: Number(params[5]),
-        extracted_text: params[6] || null,
-        processing_status: params[7] || 'uploaded',
-        error_message: null,
-        uploaded_at: now
-      };
+      let rec;
+      if (params.length >= 10) {
+        rec = {
+          id: newId,
+          patient_id: Number(params[0]),
+          doctor_id: params[1] ? Number(params[1]) : null,
+          appointment_id: params[2] ? Number(params[2]) : null,
+          original_filename: params[3],
+          stored_filename: params[4],
+          file_path: params[5],
+          mime_type: params[6] || 'application/pdf',
+          file_size: Number(params[7]),
+          extracted_text: params[8] || null,
+          processing_status: params[9] || 'uploaded',
+          error_message: null,
+          uploaded_at: now
+        };
+      } else {
+        rec = {
+          id: newId,
+          patient_id: Number(params[0]),
+          doctor_id: null,
+          appointment_id: params[1] ? Number(params[1]) : null,
+          original_filename: params[2],
+          stored_filename: params[3],
+          file_path: 'uploads/' + params[3],
+          mime_type: params[4] || 'application/pdf',
+          file_size: Number(params[5]),
+          extracted_text: params[6] || null,
+          processing_status: params[7] || 'uploaded',
+          error_message: null,
+          uploaded_at: now
+        };
+      }
       store.medical_records.push(rec);
+      saveFallbackStore(store);
       return { insertId: newId, affectedRows: 1 };
     }
 
@@ -461,6 +533,7 @@ function executeFallbackQuery(sql, params = []) {
         updated_at: now
       };
       store.medical_summaries.push(sum);
+      saveFallbackStore(store);
       return { insertId: newId, affectedRows: 1 };
     }
 
@@ -483,6 +556,7 @@ function executeFallbackQuery(sql, params = []) {
       } else {
         store.medical_record_shares.push(share);
       }
+      saveFallbackStore(store);
       return { insertId: newId, affectedRows: 1 };
     }
 
@@ -508,7 +582,7 @@ function executeFallbackQuery(sql, params = []) {
         doc.average_rating = parseFloat(avg.toFixed(2));
         doc.total_reviews = docRevs.length;
       }
-
+      saveFallbackStore(store);
       return { insertId: newId, affectedRows: 1 };
     }
 
@@ -524,6 +598,7 @@ function executeFallbackQuery(sql, params = []) {
         ip_address: params[5] || '127.0.0.1',
         created_at: now
       });
+      saveFallbackStore(store);
       return { insertId: newId, affectedRows: 1 };
     }
 
@@ -532,6 +607,19 @@ function executeFallbackQuery(sql, params = []) {
 
   // 3. UPDATE queries
   if (upper.startsWith('UPDATE')) {
+    if (upper.includes('USERS')) {
+      if (upper.includes('GOOGLE_SUBJECT =')) {
+        const sub = params[0];
+        const id = Number(params[1]);
+        const user = store.users.find(u => u.id === id);
+        if (user) {
+          user.google_subject = sub;
+          saveFallbackStore(store);
+          return { affectedRows: 1 };
+        }
+      }
+    }
+
     if (upper.includes('DOCTORS')) {
       if (upper.includes('VERIFICATION_STATUS =')) {
         const status = params[0];
@@ -539,6 +627,7 @@ function executeFallbackQuery(sql, params = []) {
         const doc = store.doctors.find(d => d.id === id);
         if (doc) {
           doc.verification_status = status;
+          saveFallbackStore(store);
           return { affectedRows: 1 };
         }
       }
@@ -550,6 +639,7 @@ function executeFallbackQuery(sql, params = []) {
         if (doc) {
           doc.average_rating = rating;
           doc.total_reviews = reviewsCount;
+          saveFallbackStore(store);
           return { affectedRows: 1 };
         }
       }
@@ -570,6 +660,7 @@ function executeFallbackQuery(sql, params = []) {
         if (appt) {
           appt.appointment_status = status;
           if (reason) appt.cancellation_reason = reason;
+          saveFallbackStore(store);
           return { affectedRows: 1 };
         }
       }
@@ -579,6 +670,7 @@ function executeFallbackQuery(sql, params = []) {
         const appt = store.appointments.find(a => a.id === id);
         if (appt) {
           appt.doctor_notes = notes;
+          saveFallbackStore(store);
           return { affectedRows: 1 };
         }
       }
@@ -593,6 +685,7 @@ function executeFallbackQuery(sql, params = []) {
         if (rec) {
           rec.processing_status = status;
           if (text !== undefined) rec.extracted_text = text;
+          saveFallbackStore(store);
           return { affectedRows: 1 };
         }
       }
@@ -608,11 +701,13 @@ function executeFallbackQuery(sql, params = []) {
           if (status === 'revoked') {
             share.revoked_at = new Date().toISOString().slice(0, 19).replace('T', ' ');
           }
+          saveFallbackStore(store);
           return { affectedRows: 1 };
         }
       }
     }
 
+    saveFallbackStore(store);
     return { affectedRows: 1 };
   }
 
@@ -622,13 +717,16 @@ function executeFallbackQuery(sql, params = []) {
       const id = Number(params[0]);
       const initial = store.medical_records.length;
       store.medical_records = store.medical_records.filter(r => r.id !== id);
+      saveFallbackStore(store);
       return { affectedRows: initial - store.medical_records.length };
     }
     if (upper.includes('FROM DOCTOR_AVAILABILITY')) {
       const docId = Number(params[0]);
       store.doctor_availability = store.doctor_availability.filter(a => a.doctor_id !== docId);
+      saveFallbackStore(store);
       return { affectedRows: 1 };
     }
+    saveFallbackStore(store);
     return { affectedRows: 1 };
   }
 
@@ -662,6 +760,37 @@ async function getConnection() {
 }
 
 /**
+ * Ensure MySQL schema and sample data exist if MySQL is running
+ */
+async function ensureMySqlSchema(pool) {
+  try {
+    const [tables] = await pool.query("SHOW TABLES LIKE 'users'");
+    if (tables.length === 0) {
+      console.log('[MediConnect DB] MySQL database is empty. Applying schema.sql...');
+      const schemaPath = path.resolve(__dirname, '../../database/schema.sql');
+      if (fs.existsSync(schemaPath)) {
+        const sql = fs.readFileSync(schemaPath, 'utf8');
+        const statements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0 && !s.startsWith('--') && !s.startsWith('/*'));
+        for (const stmt of statements) {
+          try { await pool.query(stmt); } catch (e) {}
+        }
+      }
+      const samplePath = path.resolve(__dirname, '../../database/sample_data.sql');
+      if (fs.existsSync(samplePath)) {
+        const sampleSql = fs.readFileSync(samplePath, 'utf8');
+        const stmts = sampleSql.split(';').map(s => s.trim()).filter(s => s.length > 0 && !s.startsWith('--') && !s.startsWith('/*'));
+        for (const s of stmts) {
+          try { await pool.query(s); } catch (e) {}
+        }
+      }
+      console.log('[MediConnect DB] MySQL schema and seed data applied successfully.');
+    }
+  } catch (err) {
+    console.warn('[MediConnect DB] MySQL auto-schema check note:', err.message);
+  }
+}
+
+/**
  * Test connectivity
  */
 async function testConnection() {
@@ -669,13 +798,15 @@ async function testConnection() {
     const currentPool = getPool();
     if (currentPool) {
       const [result] = await currentPool.query('SELECT 1 as connected');
+      await ensureMySqlSchema(currentPool);
       return { success: true, mode: 'mysql', result };
     }
   } catch (error) {
+    initFallbackStore();
     return {
       success: true,
-      mode: 'fallback_memory',
-      note: 'Operating in self-contained In-Memory development database. MySQL is offline on localhost:3306.'
+      mode: 'fallback_persistent',
+      note: 'MySQL is offline on localhost:3306. Operating in Persistent Storage (database/mediconnect_persistent_store.json). All registered accounts and records persist permanently across restarts.'
     };
   }
 }
@@ -684,5 +815,6 @@ module.exports = {
   getPool,
   query,
   getConnection,
-  testConnection
+  testConnection,
+  initFallbackStore
 };

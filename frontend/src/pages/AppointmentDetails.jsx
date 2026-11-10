@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { Calendar, Clock, MapPin, Shield, ShieldAlert, Sparkles, Download, FileText, CheckCircle2, User, Printer, Save } from 'lucide-react';
+import { Calendar, Clock, MapPin, Shield, ShieldAlert, Sparkles, Download, FileText, CheckCircle2, User, Printer, Save, AlertTriangle } from 'lucide-react';
 import appointmentService from '../services/appointmentService';
 import medicalRecordService from '../services/medicalRecordService';
 import authService from '../services/authService';
@@ -240,6 +240,30 @@ export default function AppointmentDetails() {
                 </div>
               </div>
 
+              {/* Identity Mismatch Warning Banner */}
+              {structured.identity_mismatch_detected && (
+                <div style={{
+                  background: '#fffbeb',
+                  border: '2px solid #f59e0b',
+                  borderRadius: '10px',
+                  padding: '16px 20px',
+                  marginBottom: '20px',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '14px'
+                }}>
+                  <AlertTriangle size={26} color="#d97706" style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div>
+                    <h4 style={{ color: '#92400e', margin: '0 0 6px', fontSize: '1rem', fontWeight: 700 }}>
+                      ⚠️ Patient Identity Mismatch Detected
+                    </h4>
+                    <p style={{ margin: 0, color: '#78350f', fontSize: '0.9rem', lineHeight: 1.5 }}>
+                      {structured.identity_warning || `The uploaded medical report explicitly identifies the patient as "${structured.reported_patient_name}", which differs from the active account holder ("${structured.account_holder_name}"). Please verify patient identity prior to consultation.`}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="summary-disclaimer-banner">
                 <strong>AI-Generated Summary: For Review by a Qualified Healthcare Professional.</strong> This summary is intended to assist medical history review and does not diagnose conditions, prescribe treatment, or replace clinical judgment.
               </div>
@@ -251,37 +275,41 @@ export default function AppointmentDetails() {
                 </div>
 
                 <div className="summary-section-box">
-                  <div className="summary-section-title">2. Document Dates and Types</div>
-                  <div className="summary-section-content">{structured.document_dates_and_types}</div>
+                  <div className="summary-section-title">2. Document Type and Date</div>
+                  <div className="summary-section-content">{structured.document_type_and_date || structured.document_dates_and_types}</div>
                 </div>
 
                 <div className="summary-section-box">
-                  <div className="summary-section-title">3. Previously Documented Medical Conditions</div>
-                  <div className="summary-section-content">{structured.previously_documented_conditions}</div>
-                </div>
-
-                <div className="summary-section-box">
-                  <div className="summary-section-title">4. Previous Treatments and Medications</div>
-                  <div className="summary-section-content">{structured.previous_treatments_and_medications}</div>
-                </div>
-
-                <div className="summary-section-box">
-                  <div className="summary-section-title">5. Allergies Documented in the Records</div>
-                  <div className="summary-section-content">{structured.allergies_documented}</div>
-                </div>
-
-                <div className="summary-section-box">
-                  <div className="summary-section-title">6. Important Laboratory Results</div>
-                  <div className="summary-section-content">{structured.important_laboratory_results}</div>
-                </div>
-
-                <div className="summary-section-box">
-                  <div className="summary-section-title">7. Other Relevant Medical Findings</div>
-                  <div className="summary-section-content">{structured.other_relevant_medical_findings}</div>
+                  <div className="summary-section-title">3. Normal Findings</div>
+                  <div className="summary-section-content">{structured.normal_findings || structured.other_relevant_medical_findings}</div>
                 </div>
 
                 <div className="summary-section-box highlight">
-                  <div className="summary-section-title alert">8. Information Requiring Doctor Review</div>
+                  <div className="summary-section-title alert">4. Abnormal Findings</div>
+                  <div className="summary-section-content">{structured.abnormal_findings || structured.previously_documented_conditions}</div>
+                </div>
+
+                <div className="summary-section-box">
+                  <div className="summary-section-title">5. Measurements and Laboratory Values</div>
+                  <div className="summary-section-content">{structured.measurements_and_laboratory_values || structured.important_laboratory_results}</div>
+                </div>
+
+                {structured.radiologist_doctor_impression && (
+                  <div className="summary-section-box highlight">
+                    <div className="summary-section-title alert">6. Radiologist / Doctor Impression</div>
+                    <div className="summary-section-content">{structured.radiologist_doctor_impression}</div>
+                  </div>
+                )}
+
+                {structured.recommendations_mentioned && (
+                  <div className="summary-section-box">
+                    <div className="summary-section-title">7. Recommendations Mentioned in Report</div>
+                    <div className="summary-section-content">{structured.recommendations_mentioned}</div>
+                  </div>
+                )}
+
+                <div className="summary-section-box">
+                  <div className="summary-section-title">8. Information Requiring Doctor Review</div>
                   <div className="summary-section-content">{structured.information_requiring_doctor_review}</div>
                 </div>
 
@@ -335,7 +363,7 @@ export default function AppointmentDetails() {
                     onClick={() => medicalRecordService.downloadRecord(doc.id, doc.originalFilename)}
                     className="btn btn-secondary btn-sm"
                   >
-                    <Download size={14} /> Download PDF
+                    <Download size={14} /> View / Download
                   </button>
                 </div>
               ))}

@@ -117,9 +117,11 @@ CREATE TABLE IF NOT EXISTS appointments (
 CREATE TABLE IF NOT EXISTS medical_records (
     id INT AUTO_INCREMENT PRIMARY KEY,
     patient_id INT NOT NULL,
+    doctor_id INT NULL,
     appointment_id INT NULL,
     original_filename VARCHAR(255) NOT NULL,
     stored_filename VARCHAR(255) NOT NULL UNIQUE,
+    file_path VARCHAR(500) NULL,
     mime_type VARCHAR(100) NOT NULL DEFAULT 'application/pdf',
     file_size INT NOT NULL,
     extracted_text LONGTEXT NULL,
@@ -127,8 +129,11 @@ CREATE TABLE IF NOT EXISTS medical_records (
     error_message TEXT NULL,
     uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_medical_records_patient FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+    CONSTRAINT fk_medical_records_doctor FOREIGN KEY (doctor_id) REFERENCES doctors(id) ON DELETE SET NULL,
     CONSTRAINT fk_medical_records_appointment FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE SET NULL,
     INDEX idx_records_patient (patient_id),
+    INDEX idx_records_doctor (doctor_id),
+    INDEX idx_records_appointment (appointment_id),
     INDEX idx_records_status (processing_status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

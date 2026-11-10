@@ -1,5 +1,19 @@
 const db = require('../config/db');
 
+const APPOINTMENT_SELECT_SQL = `
+  SELECT a.*,
+         u_p.full_name AS patient_name, u_p.email AS patient_email, u_p.phone AS patient_phone,
+         u_d.full_name AS doctor_name, d.specialization, d.hospital_name, d.hospital_address,
+         EXISTS(SELECT 1 FROM medical_records mr WHERE mr.appointment_id = a.id) AS records_uploaded,
+         EXISTS(SELECT 1 FROM medical_summaries ms WHERE ms.appointment_id = a.id AND ms.summary_status = 'ready') AS summary_ready,
+         EXISTS(SELECT 1 FROM medical_record_shares mrs WHERE mrs.appointment_id = a.id AND mrs.consent_status = 'granted') AS consent_granted
+  FROM appointments a
+  LEFT JOIN patients p ON p.id = a.patient_id
+  LEFT JOIN users u_p ON u_p.id = p.user_id
+  LEFT JOIN doctors d ON d.id = a.doctor_id
+  LEFT JOIN users u_d ON u_d.id = d.user_id
+`;
+
 class Appointment {
   static async create({
     appointmentReference,
@@ -28,21 +42,24 @@ class Appointment {
   }
 
   static async findById(id) {
-    const rows = await db.query('SELECT * FROM appointments WHERE id = ?', [id]);
+    const rows = await db.query(APPOINTMENT_SELECT_SQL + ' WHERE a.id = ?', [id]);
     return rows[0] || null;
   }
 
   static async findByReference(reference) {
-    const rows = await db.query('SELECT * FROM appointments WHERE appointment_reference = ?', [reference]);
+    const rows = await db.query(APPOINTMENT_SELECT_SQL + ' WHERE a.appointment_reference = ?', [reference]);
     return rows[0] || null;
   }
 
   static async findByPatientId(patientId) {
-    return await db.query('SELECT * FROM appointments WHERE patient_id = ? ORDER BY appointment_datetime DESC', [patientId]);
+    if (patientId > 0) {
+      return await db.query(APPOINTMENT_SELECT_SQL + ' WHERE a.patient_id = ? ORDER BY a.appointment_datetime DESC', [patientId]);
+    }
+    return await db.query(APPOINTMENT_SELECT_SQL + ' ORDER BY a.appointment_datetime DESC');
   }
 
   static async findByDoctorId(doctorId) {
-    return await db.query('SELECT * FROM appointments WHERE doctor_id = ? ORDER BY appointment_datetime DESC', [doctorId]);
+    return await db.query(APPOINTMENT_SELECT_SQL + ' WHERE a.doctor_id = ? ORDER BY a.appointment_datetime DESC', [doctorId]);
   }
 
   static async checkSlotConflict(doctorId, startDatetime, endDatetime, excludeId = null) {

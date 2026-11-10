@@ -1,6 +1,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const config = require('../config/environment');
+const db = require('../config/db');
 const User = require('../models/User');
 const Doctor = require('../models/Doctor');
 const DoctorAvailability = require('../models/DoctorAvailability');
@@ -274,8 +275,8 @@ exports.googleAuth = asyncHandler(async (req, res, next) => {
     user = await User.findByEmail(payload.email);
     if (user) {
       // User exists with email - link Google Subject
-      // Update google_subject
       user.google_subject = payload.googleId;
+      await db.query('UPDATE users SET google_subject = ? WHERE id = ?', [payload.googleId, user.id]);
     } else {
       // Create new user with server-controlled role
       const safeRole = targetRole === 'doctor' ? 'doctor' : 'patient';

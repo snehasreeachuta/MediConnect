@@ -142,14 +142,23 @@ exports.getAppointmentById = asyncHandler(async (req, res, next) => {
   // Summary is accessible to the patient, or to the doctor IF consent is granted
   if (isPatient || (isDoctor && hasConsent) || isAdmin) {
     summary = await MedicalRecord.getSummaryByAppointmentId(appointment.id);
-    if (isDoctor && !summary) {
+    if (!summary) {
       // check if patient has a general summary
       const patientSummaries = await MedicalRecord.getSummaryByPatientId(appointment.patient_id);
       if (patientSummaries.length > 0) summary = patientSummaries[0];
     }
 
-    // Original documents
+    // Original documents: check appointment-linked records first
     medicalRecords = await MedicalRecord.findByPatientId(appointment.patient_id, appointment.id);
+    if (medicalRecords.length === 0) {
+      // Check records linked directly to this doctor
+      const docRecords = await MedicalRecord.findByDoctorId(appointment.doctor_id);
+      medicalRecords = docRecords.filter(r => r.patient_id === appointment.patient_id);
+    }
+    if (medicalRecords.length === 0 && (hasConsent || isPatient)) {
+      // Fallback to patient's general records if authorized
+      medicalRecords = await MedicalRecord.findByPatientId(appointment.patient_id);
+    }
   }
 
   res.status(200).json({
@@ -161,6 +170,9 @@ exports.getAppointmentById = asyncHandler(async (req, res, next) => {
       medicalRecords: medicalRecords.map(r => ({
         id: r.id,
         originalFilename: r.original_filename,
+        storedFilename: r.stored_filename,
+        filePath: r.file_path || `uploads/${r.stored_filename}`,
+        mimeType: r.mime_type,
         fileSize: r.file_size,
         processingStatus: r.processing_status,
         uploadedAt: r.uploaded_at

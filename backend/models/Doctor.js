@@ -3,7 +3,11 @@ const db = require('../config/db');
 class Doctor {
   static async findAllApproved(filters = {}) {
     const { specialization, city, minFee, maxFee, minRating, search } = filters;
-    let doctors = await db.query('SELECT * FROM doctors');
+    let doctors = await db.query(`
+      SELECT d.*, u.full_name, u.email, u.phone 
+      FROM doctors d 
+      JOIN users u ON u.id = d.user_id
+    `);
     
     // Filter approved only for public directory
     let list = doctors.filter(d => d.verification_status === 'approved');
@@ -37,17 +41,31 @@ class Doctor {
   }
 
   static async findById(id) {
-    const rows = await db.query('SELECT * FROM doctors WHERE id = ?', [id]);
+    const rows = await db.query(`
+      SELECT d.*, u.full_name, u.email, u.phone 
+      FROM doctors d 
+      JOIN users u ON u.id = d.user_id 
+      WHERE d.id = ?
+    `, [id]);
     return rows[0] || null;
   }
 
   static async findByUserId(userId) {
-    const rows = await db.query('SELECT * FROM doctors WHERE user_id = ?', [userId]);
+    const rows = await db.query(`
+      SELECT d.*, u.full_name, u.email, u.phone 
+      FROM doctors d 
+      JOIN users u ON u.id = d.user_id 
+      WHERE d.user_id = ?
+    `, [userId]);
     return rows[0] || null;
   }
 
   static async findByLicenseNumber(licenseNumber) {
-    const doctors = await db.query('SELECT * FROM doctors');
+    const doctors = await db.query(`
+      SELECT d.*, u.full_name, u.email, u.phone 
+      FROM doctors d 
+      JOIN users u ON u.id = d.user_id
+    `);
     return doctors.find(d => (d.medical_license_number || '').toLowerCase() === licenseNumber.toLowerCase().trim()) || null;
   }
 

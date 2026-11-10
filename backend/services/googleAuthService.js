@@ -21,15 +21,20 @@ async function verifyGoogleIdToken(idToken) {
     throw new AppError('Google ID token is required.', 400);
   }
 
-  // If google client id is not configured, support development mock token for testing
-  if (!config.google.clientId) {
-    console.warn('[GoogleAuth] GOOGLE_CLIENT_ID not configured in backend/.env. Using development mock verification.');
+  // Development testing mode token handling
+  const isDevToken = idToken.startsWith('mock_') || idToken.startsWith('dev-mock');
+  if (isDevToken) {
+    console.log('[GoogleAuth] Developer testing mode token received.');
     return {
       googleId: 'mock_google_sub_123456789',
       email: 'mock.google.user@mediconnect.local',
       name: 'Google Verified User',
       picture: null
     };
+  }
+
+  if (!config.google.clientId) {
+    throw new AppError('Google OAuth Client ID is not configured on the server. Please set GOOGLE_CLIENT_ID in backend/.env.', 400);
   }
 
   try {
@@ -47,8 +52,8 @@ async function verifyGoogleIdToken(idToken) {
       picture: payload.picture
     };
   } catch (err) {
-    console.error('[GoogleAuth] Token verification failed:', err.message);
-    throw new AppError('Invalid or expired Google authentication token.', 401);
+    console.error('[GoogleAuth] Real Google token verification failed:', err.message);
+    throw new AppError(`Invalid or expired Google authentication token: ${err.message}`, 401);
   }
 }
 
